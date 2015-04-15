@@ -1,6 +1,6 @@
 import openerp
 from openerp.addons.crm import crm
-from openerp.osv import fields, osv
+from openerp.osv import fields, osv, orm
 from openerp import tools
 from openerp.tools.translate import _
 from openerp.tools import html2plaintext
@@ -12,12 +12,22 @@ from email.utils import formataddr
 from urlparse import urljoin
 from openerp.addons.base.ir.ir_mail_server import MailDeliveryException
 from openerp.tools.safe_eval import safe_eval as eval
-
 _logger = logging.getLogger(__name__)
-
 
 class crm_helpdesk(osv.osv):
     _inherit = 'crm.helpdesk'
+    
+############## TO ADD PARTNER AS FOLLOWER ###############
+
+    def create(self, cr, uid, vals, context=None):
+        context = dict(context or {})
+        partner = vals.get('partner_id')
+        new = set([partner])
+        cre_id = super(crm_helpdesk, self).create(cr, uid, vals, context=context)
+        self.pool.get('crm.helpdesk').message_subscribe(cr, uid, [cre_id], list(new), context=context)
+        return cre_id
+        
+#######################################################    
     
     def _new_req_count(self, cr, uid, ids, arg, field_name, context=None):
         res = {}
@@ -333,7 +343,13 @@ class mail_mail(osv.Model):
                         headers=headers)
                     try:
                         #check for ir mail server if is it configure or not if not then take default
-                        server_id = ir_mail_server.search(cr, uid, [('smtp_user','=',email_from1)])
+################### ADDED TO SPLIT MAIL ID FROM THE STRING #############################                        
+                        if email_from1.partition('<')[2].partition('>')[0].strip():
+                            mail_frm = email_from1.partition('<')[2].partition('>')[0].strip()
+                        else:
+                            mail_frm = email_from1
+##################################################################                            
+                        server_id = ir_mail_server.search(cr, uid, [('smtp_user','=', mail_frm)])
                         if server_id:
                             res = ir_mail_server.send_email(cr, uid, msg,
                                                         mail_server_id=server_id,
@@ -392,5 +408,20 @@ class crm_helpdesk_emails(osv.osv):
             'reply_to': fields.char('Reply To'),
             'model_id':fields.many2one('ir.model','Model')
     }
+
+
+class res_partner(osv.osv):
+    _inherit = 'res.partner'
+    def _Helpdesk_count(self, cr, uid, ids, field_name, arg, context=None):
+        Helpdesks = self.pool['crm.helpdesk']
+        return {
+            partner_id: Helpdesks.search_count(cr,uid, [('partner_id', '=', partner_id)], context=context)  
+            for partner_id in ids
+        }
+
+    _columns = {
+        'Helpdesk_count': fields.function(_Helpdesk_count, string='# Helpdesks', type='integer'),
+    }
+    
 
 

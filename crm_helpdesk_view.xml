@@ -106,8 +106,8 @@
             <field name="arch" type="xml">
                 <form string="Helpdesk Emails">
                     <group col="4">
-                        <field name="sent_from"/>
-                        <field name="reply_to"/>
+                        <field name="sent_from" widget="email"/>
+                        <field name="reply_to" widget="email"/>
                         <field name="model_id"/>
                     </group>
                 </form>
@@ -138,6 +138,52 @@
 
 
 ################################################################################################
+
+########################### MY HELPDESK ACTION AND MENUITEM ###################################
+
+        <record id="crm_my_helpdesk_action" model="ir.actions.act_window">
+            <field name="name">My Helpdesk</field>
+            <field name="res_model">crm.helpdesk</field>
+            <field name="view_type">form</field>
+            <field name="view_mode">tree,form,calendar</field>
+            <field name="view_id" ref="crm_helpdesk.crm_case_tree_view_helpdesk"/>
+            <field name="search_view_id" ref="crm_helpdesk.view_crm_case_helpdesk_filter"/>
+            <field name="domain">[('user_id','=', uid), '|', ('section_id.user_id','=',uid), ('section_id.member_ids', 'in', [uid])]</field>
+        </record>
+
+
+        <menuitem id="menu_my_helpdesk" parent="base.menu_aftersale" name="My Helpdesk"
+            sequence="3" action="crm_my_helpdesk_action"/>
+
+################################################################################################
+
+########################CLAIMS BUTTON REPLACED BY HELPDESK IN PARTNER FORM VIEW #############
+
+        <record model="ir.actions.act_window" id="crm_case_categ_helpdesk">
+            <field name="name">Helpdesks</field>
+            <field name="res_model">crm.helpdesk</field>
+            <field name="view_type">form</field>
+            <field name="view_mode">tree,calendar,form</field>
+            <field name="view_id" ref="crm_helpdesk.crm_case_tree_view_helpdesk"/>
+            <field name="search_view_id" ref="crm_helpdesk.view_crm_case_helpdesk_filter"/>
+        </record>
+
+
+		<record id="view_helpdesk_res_partner_form" model="ir.ui.view">
+            <field name="name">res.partner.form.extended</field>
+            <field name="model">res.partner</field>
+			<field name="inherit_id" ref="crm_claim.view_claim_res_partner_info_form" />
+            <field name="arch" type="xml">
+                <xpath expr="//button[@icon='fa-comments']" position="replace">
+                    <button class="oe_inline oe_stat_button" type="action" 
+                        context="{'search_default_partner_id': active_id, 'default_partner_id': active_id}"
+                        name="%(crm_case_categ_helpdesk)d" icon="fa-comments">
+                        <field string="Helpdesk" name="Helpdesk_count" widget="statinfo"/>
+                    </button>
+                </xpath>
+            </field>
+		</record>
+
 		
 ###################### BUTTONS IN CRM HELPDESK FORM VIEW #######################################		
 		
@@ -222,5 +268,13 @@
                 </xpath>
 			</field>
 		</record>
+		
+        <menuitem name="Sales"
+            id="base.menu_base_partner"
+            groups="base.group_sale_salesman,base.group_sale_manager,group_helpdesk_user"/>
+            
+        <menuitem id="base.menu_aftersale" name="After-Sale Services" sequence="2" parent="base.menu_base_partner"
+        groups="base.group_sale_salesman,base.group_sale_manager,group_helpdesk_user"/>
+            
 	</data>
 </openerp>
