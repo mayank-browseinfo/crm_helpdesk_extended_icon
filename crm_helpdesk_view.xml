@@ -157,6 +157,7 @@
 
 ################################################################################################
 
+
 ########################CLAIMS BUTTON REPLACED BY HELPDESK IN PARTNER FORM VIEW #############
 
         <record model="ir.actions.act_window" id="crm_case_categ_helpdesk">
@@ -192,6 +193,9 @@
             <field name="model">crm.helpdesk</field>
 			<field name="inherit_id" ref="crm_helpdesk.crm_case_form_view_helpdesk" />
             <field name="arch" type="xml">
+				<xpath expr="/form/sheet/group/field[@name='section_id']" position="replace">
+					<field name="section_id" widget="selection"/>
+				</xpath>
 				<xpath expr="/form/sheet/notebook/page/separator[@string='Notes']" position="before">
 					<div class="oe_button_box" name="buttons_part"> </div>			
 				</xpath>
@@ -271,10 +275,25 @@
 		
         <menuitem name="Sales"
             id="base.menu_base_partner"
-            groups="base.group_sale_salesman,base.group_sale_manager,group_helpdesk_user"/>
+            groups="base.group_sale_salesman,base.group_sale_manager,crm_helpdesk_extended.group_helpdesk_user"/>
             
         <menuitem id="base.menu_aftersale" name="After-Sale Services" sequence="2" parent="base.menu_base_partner"
-        groups="base.group_sale_salesman,base.group_sale_manager,group_helpdesk_user"/>
+        groups="base.group_sale_salesman,base.group_sale_manager,crm_helpdesk_extended.group_helpdesk_user"/>
+        
+        <menuitem id="sales_team.menu_sales_team_act" action="sales_team.crm_case_section_salesteams_act" sequence="1" parent="base.menu_sales" groups="base.group_sale_salesman,base.group_sale_manager,base.group_multi_salesteams"/>
+        
+        <menuitem id="sale.menu_sale_quotations"
+                action="sale.action_quotations" parent="base.menu_sales"
+                sequence="5" groups="base.group_sale_salesman,base.group_sale_manager"/>
+                
+		<menuitem name="Leads" id="crm.menu_crm_leads" parent="base.menu_sales" sequence="3"
+            action="crm.crm_case_category_act_leads_all" groups="base.group_sale_salesman,base.group_sale_manager"/>
             
+        <menuitem name="Claims" id="crm_claim.menu_crm_case_claims"
+            parent="base.menu_aftersale" action="crm_claim.crm_case_categ_claim0" sequence="1" groups="base.group_sale_salesman,base.group_sale_manager"/>
+            
+        <menuitem id="base.menu_product" name="Products" parent="base.menu_base_partner" sequence="9" groups="base.group_sale_salesman,base.group_sale_manager"/>     
+        
+        <menuitem id="base.menu_partner_form" parent="base.menu_sales" action="base.action_partner_form" sequence="2" groups="base.group_sale_salesman,base.group_sale_manager"/>               
 	</data>
 </openerp>

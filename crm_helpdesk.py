@@ -1,3 +1,6 @@
+import time
+import xmlrpclib
+import email
 import openerp
 from openerp.addons.crm import crm
 from openerp.osv import fields, osv, orm
@@ -28,7 +31,7 @@ class crm_helpdesk(osv.osv):
         return cre_id
         
 #######################################################    
-    
+
     def _new_req_count(self, cr, uid, ids, arg, field_name, context=None):
         res = {}
         ids = ids[0]
@@ -165,7 +168,10 @@ class crm_helpdesk(osv.osv):
         'sale_order_count': fields.function(_sale_order_count, string='# of Sales Order', type='integer'),                               
         'claim_count': fields.function(_claim_count, string='# Claims', type='integer'),        
         'issue_count': fields.function(_issue_count, type='integer', string="Issues",),        
-        'task_count': fields.function(_task_count, string='# Tasks', type='integer'),        
+        'task_count': fields.function(_task_count, string='# Tasks', type='integer'),
+		'section_id': fields.many2one('crm.case.section', 'Sales Team', \
+                            select=True, help='Responsible sales team. Define Responsible user and Email account for mail gateway.'),
+
     }
     
 
@@ -424,4 +430,102 @@ class res_partner(osv.osv):
     }
     
 
+class mail_thread(osv.AbstractModel):
+    _inherit = 'mail.thread'    
+    
+    def message_process(self, cr, uid, model, message, custom_values=None,
+                        save_original=False, strip_attachments=False,
+                        thread_id=None, context=None):
+        """ Process an incoming RFC2822 email message, relying on
+            ``mail.message.parse()`` for the parsing operation,
+            and ``message_route()`` to figure out the target model.
 
+            Once the target model is known, its ``message_new`` method
+            is called with the new message (if the thread record did not exist)
+            or its ``message_update`` method (if it did).
+
+            There is a special case where the target model is False: a reply
+            to a private message. In this case, we skip the message_new /
+            message_update step, to just post a new message using mail_thread
+            message_post.
+
+           :param string model: the fallback model to use if the message
+               does not match any of the currently configured mail aliases
+               (may be None if a matching alias is supposed to be present)
+           :param message: source of the RFC2822 message
+           :type message: string or xmlrpclib.Binary
+           :type dict custom_values: optional dictionary of field values
+                to pass to ``message_new`` if a new record needs to be created.
+                Ignored if the thread record already exists, and also if a
+                matching mail.alias was found (aliases define their own defaults)
+           :param bool save_original: whether to keep a copy of the original
+                email source attached to the message after it is imported.
+           :param bool strip_attachments: whether to strip all attachments
+                before processing the message, in order to save some space.
+           :param int thread_id: optional ID of the record/thread from ``model``
+               to which this mail should be attached. When provided, this
+               overrides the automatic detection based on the message
+               headers.
+        """
+        if context is None:
+            context = {}
+        
+
+        # extract message bytes - we are forced to pass the message as binary because
+        # we don't know its encoding until we parse its headers and hence can't
+        # convert it to utf-8 for transport between the mailgate script and here.
+        if isinstance(message, xmlrpclib.Binary):
+            message = str(message.data)
+        # Warning: message_from_string doesn't always work correctly on unicode,
+        # we must use utf-8 strings here :-(
+        if isinstance(message, unicode):
+            message = message.encode('utf-8')
+        msg_txt = email.message_from_string(message)
+
+        # parse the message, verify we are not in a loop by checking message_id is not duplicated
+        msg = self.message_parse(cr, uid, msg_txt, save_original=save_original, context=context)
+        
+        if strip_attachments:
+            msg.pop('attachments', None)
+
+        if msg.get('message_id'):   # should always be True as message_parse generate one if missing
+            existing_msg_ids = self.pool.get('mail.message').search(cr, SUPERUSER_ID, [
+                                                                ('message_id', '=', msg.get('message_id')),
+                                                                ], context=context)
+            if existing_msg_ids:
+                _logger.info('Ignored mail from %s to %s with Message-Id %s: found duplicated Message-Id during processing',
+                                msg.get('from'), msg.get('to'), msg.get('message_id'))
+                return False
+
+        # find possible routes for the message
+        routes = self.message_route(cr, uid, msg_txt, msg, model, thread_id, custom_values, context=context)
+        thread_id = self.message_route_process(cr, uid, msg_txt, msg, routes, context=context)
+        if routes[0][0] == 'crm.helpdesk' and msg.get('parent_id'):
+            Helpdesk_obj = self.pool.get('crm.helpdesk')
+            hd_rec = Helpdesk_obj.browse(cr, uid, routes[0][1])
+            if hd_rec.state == 'draft':
+                Helpdesk_obj.write(cr, uid, routes[0][1], {'state' : 'open'})
+        return thread_id
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    

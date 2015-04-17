@@ -21,15 +21,15 @@
 {
     "name" : "CRM Helpdesk",
     "version" : "1.0",
-    "depends" : ['crm_helpdesk', 'sale', 'project_issue', 'crm', 'account', 'crm_claim', 'project', 'calendar', 'mail',],
+    "depends" : ['crm_helpdesk', 'sale', 'project_issue', 'crm', 'account', 'crm_claim', 'project', 'calendar', 'mail', 'base', 'base_setup', 'sales_team', 'stock'],
     "description": """
         This module is used to add short links with different options in crm helpdesk.
     """,
     "website" : "www.browseinfo.in",
     "data" :[
 			'crm_helpdesk_view.xml',
-			'security/ir.model.access.csv',
 			'security/helpdesk_security.xml',
+			'security/ir.model.access.csv',
     ],
     "auto_install": False,
     "installable": True,

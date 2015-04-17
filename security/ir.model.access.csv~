@@ -7,5 +7,3 @@ access_account_move_line_user,account.move.line.my.helpdesk.user,account.model_a
 access_crm_phonecall_user,crm.phonecall.my.helpdesk.user,crm.model_crm_phonecall,group_helpdesk_user,1,1,1,0
 access_sale_order_user,sale.order.my.helpdesk.user,sale.model_sale_order,group_helpdesk_user,1,1,1,0
 access_account_invoice_user,account.invoice.my.helpdesk.user,account.model_account_invoice,group_helpdesk_user,1,1,1,0
-access_crm_lead_user,crm.lead.my.helpdesk.user,crm.model_crm_lead,group_helpdesk_user,1,1,1,0
-access_account_invoice_report_user,account.invoice.report.my.helpdesk.user,account.model_account_invoice_report,group_helpdesk_user,1,1,1,0
