@@ -169,7 +169,7 @@ class crm_helpdesk(osv.osv):
         'claim_count': fields.function(_claim_count, string='# Claims', type='integer'),        
         'issue_count': fields.function(_issue_count, type='integer', string="Issues",),        
         'task_count': fields.function(_task_count, string='# Tasks', type='integer'),
-		'section_id': fields.many2one('crm.case.section', 'Sales Team', \
+        'section_id': fields.many2one('crm.case.section', 'Sales Team', \
                             select=True, help='Responsible sales team. Define Responsible user and Email account for mail gateway.'),
 
     }
@@ -190,7 +190,6 @@ class mail_notification(osv.Model):
                 </div>
         """
         footer = ""
-
         if not user_id:
             return footer
 
@@ -203,20 +202,44 @@ class mail_notification(osv.Model):
                 signature = "--<br />%s" % user.name
             footer = tools.append_content_to_html(footer, signature, plaintext=False)
 
-        # add company signature
-        if user.company_id.website:
-            website_url = ('http://%s' % user.company_id.website) if not user.company_id.website.lower().startswith(('http:', 'https:')) \
-                else user.company_id.website
-            company = "<a style='color:inherit' href='%s'>%s</a>" % (website_url, user.company_id.name)
+
+#######################TO MAKE SIGNATURE UNCLICKABLE FOR CRM HELPDESK ##########################        
+        if (context.get('default_res_model') and context.get('default_res_model') == 'crm.helpdesk') or (context.get('default_model') and context.get('default_model') == 'crm.helpdesk'):
+            
+            helpdesk_rec = self.pool.get('crm.helpdesk').browse(cr, uid, context.get('default_res_id'))
+            case_str = _('Case# %(id)s about Helpdesk %(Query)s')
+            case_string = '<br /><small>%s</small>' % (case_str % {
+            'id' : helpdesk_rec.id,
+            'Query' : helpdesk_rec.name})
+            
+            if user.company_id.website:
+                website_url = ('http://%s' % user.company_id.website) if not user.company_id.website.lower().startswith(('http:', 'https:')) \
+                    else user.company_id.website
+                company = "<a style='color:inherit' %s >%s</a>" % (website_url, user.company_id.name)
+            else:
+                company = user.company_id.name
+            sent_by = _('Sent by %(company)s using %(odoo)s')
+            signature_company = '<br /><small>%s</small>' % (sent_by % {'company': company, 'odoo': "<a style='color:inherit' https://www.odoo.com/>Odoo</a>"
+            })
+            final_str = case_string + signature_company
+            footer = tools.append_content_to_html(footer, final_str, plaintext=False, container_tag='div')
+            
+###############################################         
         else:
-            company = user.company_id.name
-        sent_by = _('Sent by %(company)s using %(odoo)s')
-        if (context.get('default_res_model') and context.get('default_res_model') != 'crm.helpdesk') or (context.get('default_model') and context.get('default_model') != 'crm.helpdesk'):
+            # add company signature
+            if user.company_id.website:
+                website_url = ('http://%s' % user.company_id.website) if not user.company_id.website.lower().startswith(('http:', 'https:')) \
+                    else user.company_id.website
+                company = "<a style='color:inherit' href='%s'>%s</a>" % (website_url, user.company_id.name)
+            else:
+                company = user.company_id.name
+            sent_by = _('Sent by %(company)s using %(odoo)s')
             signature_company = '<br /><small>%s</small>' % (sent_by % {
                 'company': company,
                 'odoo': "<a style='color:inherit' href='https://www.odoo.com/'>Odoo</a>"
             })
             footer = tools.append_content_to_html(footer, signature_company, plaintext=False, container_tag='div')
+
 
         return footer
         
@@ -239,16 +262,42 @@ class mail_mail(osv.Model):
                                                                 action='mail.action_mail_redirect',
                                                                 model=mail.model, res_id=mail.res_id,
                                                                 context=contex_signup)[partner.id]
+#################### TO REMOVE CLICKABLE LINK FROM SIGNATURE FOR CRM HELPDESK ##################   
             if context.get('default_model') == 'crm.helpdesk':
-                return res
+                return ", <span class='oe_mail_footer_access'><small>%(access_msg)s <a style='color:inherit' %(portal_link)s>%(portal_msg)s</a></small></span>" % {
+                    'access_msg': _('access directly to'),
+                    'portal_link': signup_url,
+                    'portal_msg': '%s %s' % (context.get('model_name', ''), mail.record_name) if mail.record_name else _('your messages '),
+                }
+#################################################################################################                
             else:
                 return ", <span class='oe_mail_footer_access'><small>%(access_msg)s <a style='color:inherit' href='%(portal_link)s'>%(portal_msg)s</a></small></span>" % {
                     'access_msg': _('access directly to'),
                     'portal_link': signup_url,
                     'portal_msg': '%s %s' % (context.get('model_name', ''), mail.record_name) if mail.record_name else _('your messages '),
                 }
+        elif partner and partner.user_ids:
+            base_url = self.pool.get('ir.config_parameter').get_param(cr, SUPERUSER_ID, 'web.base.url')
+            mail_model = mail.model or 'mail.thread'
+            url = urljoin(base_url, self.pool[mail_model]._get_access_link(cr, uid, mail, partner, context=context))
+            
+#########################################            
+            if context.get('default_model') == 'crm.helpdesk':
+                return "<span class='oe_mail_footer_access'><small>%(access_msg)s <a style='color:inherit' %(portal_link)s>%(portal_msg)s</a></small></span>" % {
+                    'access_msg': _('about') if mail.record_name else _('access'),
+                    'portal_link': url,
+                    'portal_msg': '%s %s' % (context.get('model_name', ''), mail.record_name) if mail.record_name else _('your messages'),
+                }
+###########################################                
+            else:
+                return "<span class='oe_mail_footer_access'><small>%(access_msg)s <a style='color:inherit' href='%(portal_link)s'>%(portal_msg)s</a></small></span>" % {
+                    'access_msg': _('about') if mail.record_name else _('access'),
+                    'portal_link': url,
+                    'portal_msg': '%s %s' % (context.get('model_name', ''), mail.record_name) if mail.record_name else _('your messages'),
+                }
+                
         else:
-            return super(mail_mail, self)._get_partner_access_link(cr, uid, mail, partner=partner, context=context)
+            return None
             
     def send(self, cr, uid, ids, auto_commit=False, raise_exception=False, context=None):
         """ Sends the selected emails immediately, ignoring their current
@@ -426,7 +475,7 @@ class res_partner(osv.osv):
         }
 
     _columns = {
-        'Helpdesk_count': fields.function(_Helpdesk_count, string='# Helpdesks', type='integer'),
+        'helpdesk_count': fields.function(_Helpdesk_count, string='# Helpdesks', type='integer'),
     }
     
 
@@ -503,7 +552,7 @@ class mail_thread(osv.AbstractModel):
         if routes[0][0] == 'crm.helpdesk' and msg.get('parent_id'):
             Helpdesk_obj = self.pool.get('crm.helpdesk')
             hd_rec = Helpdesk_obj.browse(cr, uid, routes[0][1])
-            if hd_rec.state == 'draft':
+            if hd_rec.state in ['draft', 'pending', 'done', 'cancel']:
                 Helpdesk_obj.write(cr, uid, routes[0][1], {'state' : 'open'})
         return thread_id
     
