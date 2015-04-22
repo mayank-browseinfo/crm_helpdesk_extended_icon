@@ -20,6 +20,36 @@ _logger = logging.getLogger(__name__)
 class crm_helpdesk(osv.osv):
     _inherit = 'crm.helpdesk'
     
+    def message_new(self, cr, uid, msg, custom_values=None, context=None):
+        """ Overrides mail_thread message_new that is called by the mailgateway
+            through message_process.
+            This override updates the document according to the email.
+        """
+        
+        if custom_values is None:
+            custom_values = {}
+        desc = html2plaintext(msg.get('body')) if msg.get('body') else ''
+        Partner_obj = self.pool.get('res.partner')
+        if msg.get('author_id') is False:
+            vals = {
+            'name' : msg.get('from').split('<')[0].strip(),
+            'email' : msg.get('from').partition('<')[2].partition('>')[0].strip() or msg.get('from').split('<')[0].strip(),
+            }
+            partner = Partner_obj.create(cr, uid, vals)
+        else:
+            partner = msg.get('author_id', False)
+        defaults = {
+            'name': msg.get('subject') or _("No Subject"),
+            'description': desc,
+            'email_from': msg.get('from'),
+            'email_cc': msg.get('cc'),
+            'user_id': False,
+            'partner_id': partner,
+        }
+        defaults.update(custom_values)
+        return super(crm_helpdesk, self).message_new(cr, uid, msg, custom_values=defaults, context=context)
+    
+    
 ############## TO ADD PARTNER AS FOLLOWER ###############
 
     def create(self, cr, uid, vals, context=None):
@@ -29,6 +59,17 @@ class crm_helpdesk(osv.osv):
         cre_id = super(crm_helpdesk, self).create(cr, uid, vals, context=context)
         self.pool.get('crm.helpdesk').message_subscribe(cr, uid, [cre_id], list(new), context=context)
         return cre_id
+        
+    def write(self, cr, uid, ids, values, context=None):
+        Helpdesk_obj = self.pool.get('crm.helpdesk')
+        old_partner_id = Helpdesk_obj.browse(cr, uid, ids).partner_id.id
+        if values.get('partner_id'):
+            partner = values.get('partner_id')
+            new = set([partner])
+            old = set([old_partner_id])
+            Helpdesk_obj.message_unsubscribe(cr, uid, ids, list(old), context=context)
+            Helpdesk_obj.message_subscribe(cr, uid, ids, list(new), context=context)
+        return super(crm_helpdesk, self).write(cr, uid, ids, values, context=context)
         
 #######################################################    
 
@@ -207,22 +248,12 @@ class mail_notification(osv.Model):
         if (context.get('default_res_model') and context.get('default_res_model') == 'crm.helpdesk') or (context.get('default_model') and context.get('default_model') == 'crm.helpdesk'):
             
             helpdesk_rec = self.pool.get('crm.helpdesk').browse(cr, uid, context.get('default_res_id'))
-            case_str = _('Case# %(id)s about Helpdesk %(Query)s')
+            case_str = _('Ticket# %(id)s about Helpdesk %(Query)s')
             case_string = '<br /><small>%s</small>' % (case_str % {
             'id' : helpdesk_rec.id,
             'Query' : helpdesk_rec.name})
             
-            if user.company_id.website:
-                website_url = ('http://%s' % user.company_id.website) if not user.company_id.website.lower().startswith(('http:', 'https:')) \
-                    else user.company_id.website
-                company = "<a style='color:inherit' %s >%s</a>" % (website_url, user.company_id.name)
-            else:
-                company = user.company_id.name
-            sent_by = _('Sent by %(company)s using %(odoo)s')
-            signature_company = '<br /><small>%s</small>' % (sent_by % {'company': company, 'odoo': "<a style='color:inherit' https://www.odoo.com/>Odoo</a>"
-            })
-            final_str = case_string + signature_company
-            footer = tools.append_content_to_html(footer, final_str, plaintext=False, container_tag='div')
+            footer = tools.append_content_to_html(footer, case_string, plaintext=False, container_tag='div')
             
 ###############################################         
         else:
@@ -263,12 +294,8 @@ class mail_mail(osv.Model):
                                                                 model=mail.model, res_id=mail.res_id,
                                                                 context=contex_signup)[partner.id]
 #################### TO REMOVE CLICKABLE LINK FROM SIGNATURE FOR CRM HELPDESK ##################   
-            if context.get('default_model') == 'crm.helpdesk':
-                return ", <span class='oe_mail_footer_access'><small>%(access_msg)s <a style='color:inherit' %(portal_link)s>%(portal_msg)s</a></small></span>" % {
-                    'access_msg': _('access directly to'),
-                    'portal_link': signup_url,
-                    'portal_msg': '%s %s' % (context.get('model_name', ''), mail.record_name) if mail.record_name else _('your messages '),
-                }
+            if (context.get('default_model') == 'crm.helpdesk' and context.get('default_model') == 'crm.helpdesk') or (context.get('default_res_model') =='crm.helpdesk' and context.get('default_res_model') =='crm.helpdesk') or (context.get('thread_model') == 'crm.helpdesk' and context.get('thread_model') == 'crm.helpdesk'):
+                return res
 #################################################################################################                
             else:
                 return ", <span class='oe_mail_footer_access'><small>%(access_msg)s <a style='color:inherit' href='%(portal_link)s'>%(portal_msg)s</a></small></span>" % {
@@ -282,12 +309,8 @@ class mail_mail(osv.Model):
             url = urljoin(base_url, self.pool[mail_model]._get_access_link(cr, uid, mail, partner, context=context))
             
 #########################################            
-            if context.get('default_model') == 'crm.helpdesk':
-                return "<span class='oe_mail_footer_access'><small>%(access_msg)s <a style='color:inherit' %(portal_link)s>%(portal_msg)s</a></small></span>" % {
-                    'access_msg': _('about') if mail.record_name else _('access'),
-                    'portal_link': url,
-                    'portal_msg': '%s %s' % (context.get('model_name', ''), mail.record_name) if mail.record_name else _('your messages'),
-                }
+            if (context.get('default_model') == 'crm.helpdesk' and context.get('default_model') == 'crm.helpdesk') or (context.get('default_res_model') =='crm.helpdesk' and context.get('default_res_model') =='crm.helpdesk') or (context.get('thread_model') == 'crm.helpdesk' and context.get('thread_model') == 'crm.helpdesk'):
+                return res
 ###########################################                
             else:
                 return "<span class='oe_mail_footer_access'><small>%(access_msg)s <a style='color:inherit' href='%(portal_link)s'>%(portal_msg)s</a></small></span>" % {
@@ -555,26 +578,4 @@ class mail_thread(osv.AbstractModel):
             if hd_rec.state in ['draft', 'pending', 'done', 'cancel']:
                 Helpdesk_obj.write(cr, uid, routes[0][1], {'state' : 'open'})
         return thread_id
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     

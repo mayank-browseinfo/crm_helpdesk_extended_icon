@@ -27,9 +27,10 @@
     """,
     "website" : "www.browseinfo.in",
     "data" :[
-			'security/helpdesk_security.xml',
+    		'security/helpdesk_security.xml',
 			'security/ir.model.access.csv',
-			'crm_helpdesk_view.xml',			
+			'crm_helpdesk_view.xml',
+
     ],
     "auto_install": False,
     "installable": True,

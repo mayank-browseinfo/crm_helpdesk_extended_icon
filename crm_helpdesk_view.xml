@@ -148,7 +148,7 @@
             <field name="view_mode">tree,form,calendar</field>
             <field name="view_id" ref="crm_helpdesk.crm_case_tree_view_helpdesk"/>
             <field name="search_view_id" ref="crm_helpdesk.view_crm_case_helpdesk_filter"/>
-            <field name="domain">[('user_id','=', uid), '|', ('section_id.user_id','=',uid), ('section_id.member_ids', 'in', [uid])]</field>
+            <field name="domain">['|', ('user_id','=', uid), '|', ('section_id.user_id','=',uid), ('section_id.member_ids', 'in', [uid])]</field>
         </record>
 
 
@@ -179,7 +179,7 @@
                     <button class="oe_inline oe_stat_button" type="action" 
                         context="{'search_default_partner_id': active_id, 'default_partner_id': active_id}"
                         name="%(crm_case_categ_helpdesk)d" icon="fa-comments">
-                        <field string="Helpdesk" name="Helpdesk_count" widget="statinfo"/>
+                        <field string="Helpdesk" name="helpdesk_count" widget="statinfo"/>
                     </button>
                 </xpath>
             </field>
