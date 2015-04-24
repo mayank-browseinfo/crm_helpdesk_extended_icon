@@ -17,15 +17,22 @@ from openerp.addons.base.ir.ir_mail_server import MailDeliveryException
 from openerp.tools.safe_eval import safe_eval as eval
 _logger = logging.getLogger(__name__)
 
+
+from collections import OrderedDict
+import xmlrpclib
+from openerp.addons.mail.mail_message import decode
+
+
 class crm_helpdesk(osv.osv):
     _inherit = 'crm.helpdesk'
+    
+################ TO CREATE NEW PARTNER FOR CRM HELPDESK REQUEST IF PARTNER IS UNKNOWN TO SYSTEM #####    
     
     def message_new(self, cr, uid, msg, custom_values=None, context=None):
         """ Overrides mail_thread message_new that is called by the mailgateway
             through message_process.
             This override updates the document according to the email.
         """
-        
         if custom_values is None:
             custom_values = {}
         desc = html2plaintext(msg.get('body')) if msg.get('body') else ''
@@ -49,15 +56,28 @@ class crm_helpdesk(osv.osv):
         defaults.update(custom_values)
         return super(crm_helpdesk, self).message_new(cr, uid, msg, custom_values=defaults, context=context)
     
+#######################################################################################################    
     
 ############## TO ADD PARTNER AS FOLLOWER ###############
 
     def create(self, cr, uid, vals, context=None):
+        mail_followers_obj = self.pool.get('mail.followers')
+        subtype_obj = self.pool.get('mail.message.subtype')
         context = dict(context or {})
         partner = vals.get('partner_id')
         new = set([partner])
         cre_id = super(crm_helpdesk, self).create(cr, uid, vals, context=context)
-        self.pool.get('crm.helpdesk').message_subscribe(cr, uid, [cre_id], list(new), context=context)
+        subtype_ids = subtype_obj.search(
+            cr, uid, [
+                ('default', '=', True), '|', ('res_model', '=', self._name), ('res_model', '=', False)], context=context)
+        mail_followers_obj.create(
+            cr, SUPERUSER_ID, {
+                'res_model': self._name,
+                'res_id': cre_id,
+                'partner_id': list(new)[0],
+                'subtype_ids': [(6, 0, subtype_ids)],
+            }, context=context)
+       # self.pool.get('crm.helpdesk').message_subscribe(cr, uid, [cre_id], list(new), context=context)
         return cre_id
         
     def write(self, cr, uid, ids, values, context=None):
@@ -245,15 +265,15 @@ class mail_notification(osv.Model):
 
 
 #######################TO MAKE SIGNATURE UNCLICKABLE FOR CRM HELPDESK ##########################        
-        if (context.get('default_res_model') and context.get('default_res_model') == 'crm.helpdesk') or (context.get('default_model') and context.get('default_model') == 'crm.helpdesk'):
+#        if (context.get('default_res_model') and context.get('default_res_model') == 'crm.helpdesk') or (context.get('default_model') and context.get('default_model') == 'crm.helpdesk'):
             
-            helpdesk_rec = self.pool.get('crm.helpdesk').browse(cr, uid, context.get('default_res_id'))
-            case_str = _('Ticket# %(id)s about Helpdesk %(Query)s')
-            case_string = '<br /><small>%s</small>' % (case_str % {
-            'id' : helpdesk_rec.id,
-            'Query' : helpdesk_rec.name})
-            
-            footer = tools.append_content_to_html(footer, case_string, plaintext=False, container_tag='div')
+#            helpdesk_rec = self.pool.get('crm.helpdesk').browse(cr, uid, context.get('default_res_id'))
+#            case_str = _('Ticket# %(id)s about Helpdesk %(Query)s')
+#            case_string = '<br /><small>%s</small>' % (case_str % {
+#            'id' : helpdesk_rec.id,
+#            'Query' : helpdesk_rec.name})
+#            
+#            footer = tools.append_content_to_html(footer, case_string, plaintext=False, container_tag='div')
             
 ###############################################         
         else:
@@ -387,9 +407,14 @@ class mail_mail(osv.Model):
                 mail_sent = False
                 # build an RFC2822 email.message.Message object and send it without queuing
                 res = None
+                
                 for email in email_list:
+                    email_sub = email.get('subject')
                     if mail.mail_message_id.model == 'crm.helpdesk':
                         # start custom code for send mail from 'Email Sent From' field
+                        helpdesk_obj = self.pool.get('crm.helpdesk').browse(cr, uid, context.get('default_res_id'), context=context)                        
+                        if context.get('default_res_id', False):
+                            email_sub = ('['+'Case'+ ' ' + str(context.get('default_res_id'))+']') + ' '+ (helpdesk_obj.name)
                         email_from1 = ''
                         reply_to1 = ''
                         crm_helpdesk_mails = self.pool.get('crm.helpdesk.emails').search(cr, uid, [])
@@ -400,15 +425,17 @@ class mail_mail(osv.Model):
                                 reply_to1 = crm_helpdesk_browse.reply_to
                             else:
                                 reply_to1 = crm_helpdesk_browse.sent_from
+                        
                     else:
                         email_from1 = mail.email_from
                         reply_to1 = mail.reply_to
-                    # end custom code for send mail from 'Email Sent From' field
+                    
+#################TO CHANGE SUBJECT FOR HELPDESK ################
                     msg = ir_mail_server.build_email(
                         email_from=email_from1,
                         email_to=email.get('email_to'),
-                        subject=email.get('subject'),
-                        body=email.get('body'),
+                        subject= email_sub,#email.get('subject'),
+                        body= email.get('body'),
                         body_alternative=email.get('body_alternative'),
                         email_cc=tools.email_split(mail.email_cc),
                         reply_to=reply_to1,
@@ -541,7 +568,6 @@ class mail_thread(osv.AbstractModel):
         """
         if context is None:
             context = {}
-        
 
         # extract message bytes - we are forced to pass the message as binary because
         # we don't know its encoding until we parse its headers and hence can't
@@ -577,5 +603,86 @@ class mail_thread(osv.AbstractModel):
             hd_rec = Helpdesk_obj.browse(cr, uid, routes[0][1])
             if hd_rec.state in ['draft', 'pending', 'done', 'cancel']:
                 Helpdesk_obj.write(cr, uid, routes[0][1], {'state' : 'open'})
+        return thread_id    
+
+
+    def message_route_process(self, cr, uid, message, message_dict, routes, context=None):
+        # postpone setting message_dict.partner_ids after message_post, to avoid double notifications
+        context = dict(context or {})
+        partner_ids = message_dict.pop('partner_ids', [])
+        thread_id = False
+        for model, thread_id, custom_values, user_id, alias in routes:
+            if self._name == 'mail.thread':
+                context['thread_model'] = model
+            if model:
+                model_pool = self.pool[model]
+                if not (thread_id and hasattr(model_pool, 'message_update') or hasattr(model_pool, 'message_new')):
+                    raise ValueError(
+                        "Undeliverable mail with Message-Id %s, model %s does not accept incoming emails" %
+                        (message_dict['message_id'], model)
+                    )
+
+                # disabled subscriptions during message_new/update to avoid having the system user running the
+                # email gateway become a follower of all inbound messages
+                nosub_ctx = dict(context, mail_create_nosubscribe=True, mail_create_nolog=True)
+                if thread_id and hasattr(model_pool, 'message_update'):
+                    model_pool.message_update(cr, user_id, [thread_id], message_dict, context=nosub_ctx)
+                else:
+                    thread_id = model_pool.message_new(cr, user_id, message_dict, custom_values, context=nosub_ctx)
+                    context.update({'update_body':True})
+            else:
+                if thread_id:
+                    raise ValueError("Posting a message without model should be with a null res_id, to create a private message.")
+                model_pool = self.pool.get('mail.thread')
+            if not hasattr(model_pool, 'message_post'):
+                context['thread_model'] = model
+                model_pool = self.pool['mail.thread']
+            new_msg_id = model_pool.message_post(cr, uid, [thread_id], context=context, subtype='mail.mt_comment', **message_dict)
+
+            if partner_ids:
+                # postponed after message_post, because this is an external message and we don't want to create
+                # duplicate emails due to notifications
+                self.pool.get('mail.message').write(cr, uid, [new_msg_id], {'partner_ids': partner_ids}, context=context)
         return thread_id
-    
+
+        
+        
+class mail_message(osv.Model):
+    _inherit = 'mail.message'        
+        
+    def create(self, cr, uid, values, context=None):
+        if context.get('update_body',False):
+            res_id = values.get('res_id')
+            helpdesk_obj = self.pool.get('crm.helpdesk').browse(cr, uid, res_id, context=context)
+            subject1 = ('['+'Case'+ ' ' + str(res_id)+']') + ' '+ (helpdesk_obj.name)
+            ir_model_data = self.pool.get('ir.model.data')
+            template_id = ir_model_data.get_object_reference(cr, uid, 'crm_helpdesk_extended', 'email_template_crm_helpdesk')
+            value = self.pool.get('email.template').generate_email(cr, uid,  template_id and template_id[1], res_id, context=context)
+            values.update({'body' : value.get('body'), 'subject' : subject1})
+        
+        context = dict(context or {})
+        default_starred = context.pop('default_starred', False)
+
+        if 'email_from' not in values:  # needed to compute reply_to
+            values['email_from'] = self._get_default_from(cr, uid, context=context)
+        if not values.get('message_id'):
+            values['message_id'] = self._get_message_id(cr, uid, values, context=context)
+        if 'reply_to' not in values:
+            values['reply_to'] = self._get_reply_to(cr, uid, values, context=context)
+        if 'record_name' not in values and 'default_record_name' not in context:
+            values['record_name'] = self._get_record_name(cr, uid, values, context=context)
+
+        newid = super(mail_message, self).create(cr, uid, values, context)
+        self._notify(cr, uid, newid, context=context,
+                     force_send=context.get('mail_notify_force_send', True),
+                     user_signature=context.get('mail_notify_user_signature', True))
+        # TDE FIXME: handle default_starred. Why not setting an inv on starred ?
+        # Because starred will call set_message_starred, that looks for notifications.
+        # When creating a new mail_message, it will create a notification to a message
+        # that does not exist, leading to an error (key not existing). Also this
+        # this means unread notifications will be created, yet we can not assure
+        # this is what we want.
+        if default_starred:
+            self.set_message_starred(cr, uid, [newid], True, context=context)
+        return newid
+        
