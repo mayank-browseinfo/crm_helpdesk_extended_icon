@@ -651,19 +651,8 @@ class mail_message(osv.Model):
     _inherit = 'mail.message'        
         
     def create(self, cr, uid, values, context=None):
-################### TO AUTO SEND MAIL ON CREATION OF HELPDESK RECORD WITH EMAIL TEMPLATE ########
-        if context.get('update_body',False):
-            res_id = values.get('res_id')
-            helpdesk_obj = self.pool.get('crm.helpdesk').browse(cr, uid, res_id, context=context)
-            subject1 = ('['+'Case'+ ' ' + str(res_id)+']') + ' '+ (helpdesk_obj.name)
-            ir_model_data = self.pool.get('ir.model.data')
-            template_id = ir_model_data.get_object_reference(cr, uid, 'crm_helpdesk_extended', 'email_template_crm_helpdesk')
-            value = self.pool.get('email.template').generate_email(cr, uid,  template_id and template_id[1], res_id, context=context)
-            values.update({'body' : value.get('body'), 'subject' : subject1})
-###################################################################################################        
         context = dict(context or {})
         default_starred = context.pop('default_starred', False)
-
         if 'email_from' not in values:  # needed to compute reply_to
             values['email_from'] = self._get_default_from(cr, uid, context=context)
         if not values.get('message_id'):
@@ -672,11 +661,12 @@ class mail_message(osv.Model):
             values['reply_to'] = self._get_reply_to(cr, uid, values, context=context)
         if 'record_name' not in values and 'default_record_name' not in context:
             values['record_name'] = self._get_record_name(cr, uid, values, context=context)
-
-        newid = super(mail_message, self).create(cr, uid, values, context)
-        self._notify(cr, uid, newid, context=context,
-                     force_send=context.get('mail_notify_force_send', True),
-                     user_signature=context.get('mail_notify_user_signature', True))
+        newid = super(osv.Model, self).create(cr, uid, values, context)
+################# COMMENTED TO STOP AUTO SEND MAIL ON PARTNER AND HELPDESK RECORD CREATION ######        
+#        self._notify(cr, uid, newid, context=context,
+#                     force_send=context.get('mail_notify_force_send', True),
+#                     user_signature=context.get('mail_notify_user_signature', True))
+#################################################################################################
         # TDE FIXME: handle default_starred. Why not setting an inv on starred ?
         # Because starred will call set_message_starred, that looks for notifications.
         # When creating a new mail_message, it will create a notification to a message
