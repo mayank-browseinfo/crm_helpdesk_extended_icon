@@ -31,6 +31,7 @@
 			'security/ir.model.access.csv',
 			'crm_helpdesk_view.xml',
 			'email_template_view.xml',
+			'helpdesk_action_rule.xml',
     ],
     "auto_install": False,
     "installable": True,

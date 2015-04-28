@@ -314,7 +314,7 @@ class mail_mail(osv.Model):
                                                                 model=mail.model, res_id=mail.res_id,
                                                                 context=contex_signup)[partner.id]
 #################### TO REMOVE CLICKABLE LINK FROM SIGNATURE FOR CRM HELPDESK ##################   
-            if (context.get('default_model') == 'crm.helpdesk' and context.get('default_model') == 'crm.helpdesk') or (context.get('default_res_model') =='crm.helpdesk' and context.get('default_res_model') =='crm.helpdesk') or (context.get('thread_model') == 'crm.helpdesk' and context.get('thread_model') == 'crm.helpdesk'):
+            if (context.get('default_model') == 'crm.helpdesk' and context.get('default_model') == 'crm.helpdesk') or (context.get('default_res_model') =='crm.helpdesk' and context.get('default_res_model') =='crm.helpdesk') or (context.get('thread_model') == 'crm.helpdesk' and context.get('thread_model') == 'crm.helpdesk') or (context.get('model_name') == 'Helpdesk' and context.get('model_name') == 'Helpdesk'):
                 return res
 #################################################################################################                
             else:
@@ -329,7 +329,7 @@ class mail_mail(osv.Model):
             url = urljoin(base_url, self.pool[mail_model]._get_access_link(cr, uid, mail, partner, context=context))
             
 #########################################            
-            if (context.get('default_model') == 'crm.helpdesk' and context.get('default_model') == 'crm.helpdesk') or (context.get('default_res_model') =='crm.helpdesk' and context.get('default_res_model') =='crm.helpdesk') or (context.get('thread_model') == 'crm.helpdesk' and context.get('thread_model') == 'crm.helpdesk'):
+            if (context.get('default_model') == 'crm.helpdesk' and context.get('default_model') == 'crm.helpdesk') or (context.get('default_res_model') =='crm.helpdesk' and context.get('default_res_model') =='crm.helpdesk') or (context.get('thread_model') == 'crm.helpdesk' and context.get('thread_model') == 'crm.helpdesk') or (context.get('model_name') == 'Helpdesk' and context.get('model_name') == 'Helpdesk'):
                 return res
 ###########################################                
             else:
@@ -651,6 +651,7 @@ class mail_message(osv.Model):
     _inherit = 'mail.message'        
         
     def create(self, cr, uid, values, context=None):
+################### TO AUTO SEND MAIL ON CREATION OF HELPDESK RECORD WITH EMAIL TEMPLATE ########
         if context.get('update_body',False):
             res_id = values.get('res_id')
             helpdesk_obj = self.pool.get('crm.helpdesk').browse(cr, uid, res_id, context=context)
@@ -659,7 +660,7 @@ class mail_message(osv.Model):
             template_id = ir_model_data.get_object_reference(cr, uid, 'crm_helpdesk_extended', 'email_template_crm_helpdesk')
             value = self.pool.get('email.template').generate_email(cr, uid,  template_id and template_id[1], res_id, context=context)
             values.update({'body' : value.get('body'), 'subject' : subject1})
-        
+###################################################################################################        
         context = dict(context or {})
         default_starred = context.pop('default_starred', False)
 
