@@ -661,11 +661,14 @@ class mail_message(osv.Model):
             values['reply_to'] = self._get_reply_to(cr, uid, values, context=context)
         if 'record_name' not in values and 'default_record_name' not in context:
             values['record_name'] = self._get_record_name(cr, uid, values, context=context)
-        newid = super(osv.Model, self).create(cr, uid, values, context)
-################# COMMENTED TO STOP AUTO SEND MAIL ON PARTNER AND HELPDESK RECORD CREATION ######        
-#        self._notify(cr, uid, newid, context=context,
-#                     force_send=context.get('mail_notify_force_send', True),
-#                     user_signature=context.get('mail_notify_user_signature', True))
+################# TO STOP AUTO SEND MAIL ON PARTNER AND HELPDESK RECORD CREATION ######   
+        if context.get('update_body') == True:
+            newid = super(osv.Model, self).create(cr, uid, values, context)
+        else:
+            newid = super(osv.Model, self).create(cr, uid, values, context)
+            self._notify(cr, uid, newid, context=context,
+                         force_send=context.get('mail_notify_force_send', True),
+                         user_signature=context.get('mail_notify_user_signature', True))
 #################################################################################################
         # TDE FIXME: handle default_starred. Why not setting an inv on starred ?
         # Because starred will call set_message_starred, that looks for notifications.

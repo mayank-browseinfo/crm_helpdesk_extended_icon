@@ -157,7 +157,6 @@
 
 ################################################################################################
 
-
 ########################CLAIMS BUTTON REPLACED BY HELPDESK IN PARTNER FORM VIEW #############
 
         <record model="ir.actions.act_window" id="crm_case_categ_helpdesk">
