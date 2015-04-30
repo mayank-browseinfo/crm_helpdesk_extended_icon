@@ -680,3 +680,32 @@ class mail_message(osv.Model):
             self.set_message_starred(cr, uid, [newid], True, context=context)
         return newid
         
+
+class project(osv.osv):
+    _inherit = "project.project"
+
+    def search(self, cr, user, args, offset=0, limit=None, order=None, context=None, count=False):
+        Task_obj = self.pool.get('project.task')
+        project_ids = []
+        user_tasks = Task_obj.search(cr, user, [('user_id', '=', user)])
+        for task in Task_obj.browse(cr, user, user_tasks):
+            if task.project_id.id not in project_ids:
+                project_ids.append(task.project_id.id)
+        args.append(['id', 'in' , project_ids])
+        return super(project, self).search(cr, user, args, offset=offset, limit=limit, order=order,
+            context=context, count=count)
+        
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
