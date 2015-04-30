@@ -691,7 +691,8 @@ class project(osv.osv):
         for task in Task_obj.browse(cr, user, user_tasks):
             if task.project_id.id not in project_ids:
                 project_ids.append(task.project_id.id)
-        args.append(['id', 'in' , project_ids])
+        if user != 1:
+            args.append(['id', 'in' , project_ids])
         return super(project, self).search(cr, user, args, offset=offset, limit=limit, order=order,
             context=context, count=count)
         
