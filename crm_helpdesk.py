@@ -691,13 +691,20 @@ class project(osv.osv):
         for task in Task_obj.browse(cr, user, user_tasks):
             if task.project_id.id not in project_ids:
                 project_ids.append(task.project_id.id)
-        if user != 1:
-            args.append(['id', 'in' , project_ids])
+        if user != SUPERUSER_ID:
+            args += ['|',['user_id','=',user],'|', ['members','in',[user]],'|',['user_id','=',False],['id', 'in', project_ids]]
         return super(project, self).search(cr, user, args, offset=offset, limit=limit, order=order,
             context=context, count=count)
         
         
+class task(osv.osv):
+    _inherit = "project.task"
 
+    def search(self, cr, user, args, offset=0, limit=None, order=None, context=None, count=False):
+        if user != SUPERUSER_ID:
+            args += ['|',['user_id','=',user],['user_id','=',False]]
+        return super(task, self).search(cr, user, args, offset=offset, limit=limit, order=order,
+            context=context, count=count)
 
 
 
