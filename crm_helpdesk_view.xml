@@ -181,6 +181,11 @@
                         <field string="Helpdesk" name="helpdesk_count" widget="statinfo"/>
                     </button>
                 </xpath>
+                
+				<!--xpath expr="//field[@name='title']" position="after">
+   					<field name="check_functional_field"/>
+				</xpath-->
+
             </field>
 		</record>
 
