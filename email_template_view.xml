@@ -4,9 +4,11 @@
         <!--Email template -->
         <record id="email_template_crm_helpdesk" model="email.template">
             <field name="name">CRM HELPDESK - Send by Email</field>
-            <field name="email_from">${(object.email_from or '')|safe}</field>
-            <field name="subject">[Case ${object.id}] ${(object.name)}</field>
+            <field name="email_from">${(object.setting_id and object.setting_id.sent_from or '')|safe}</field>
+            <field name="reply_to">${(object.setting_id and object.setting_id.reply_to or '')|safe}</field>
+            <field name="subject">${(object.name)}</field>
             <field name="partner_to">${object.partner_id.id}</field>
+            <field name="context">{"object": object}</field>
             <field name="model_id" ref="model_crm_helpdesk"/>
             <field name="auto_delete" eval="0"/>
             <field name="user_signature" eval="True"/>
@@ -19,5 +21,5 @@
 </div>
             ]]></field>
         </record>
-	</data>
+    </data>
 </openerp>

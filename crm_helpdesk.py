@@ -21,13 +21,13 @@ from openerp.tools.translate import _
 from collections import OrderedDict
 import xmlrpclib
 from openerp.addons.mail.mail_message import decode
+from openerp.tools import ustr
 
 
 class crm_helpdesk(osv.osv):
     _inherit = 'crm.helpdesk'
 
 ################ TO CREATE NEW PARTNER FOR CRM HELPDESK REQUEST IF PARTNER IS UNKNOWN TO SYSTEM #####
-
     def message_new(self, cr, uid, msg, custom_values=None, context=None):
         """ Overrides mail_thread message_new that is called by the mailgateway
             through message_process.
@@ -37,6 +37,7 @@ class crm_helpdesk(osv.osv):
             custom_values = {}
         desc = html2plaintext(msg.get('body')) if msg.get('body') else ''
         Partner_obj = self.pool.get('res.partner')
+        Fetchmail = self.pool.get('fetchmail.server')
         if msg.get('author_id') is False:
             vals = {
             'name' : msg.get('from').split('<')[0].strip(),
@@ -45,30 +46,39 @@ class crm_helpdesk(osv.osv):
             partner = Partner_obj.create(cr, uid, vals)
         else:
             partner = msg.get('author_id', False)
+        if context.get('fetchmail_server_id'):
+            fetchmail_obj = Fetchmail.browse(cr, uid, context.get('fetchmail_server_id'))
         defaults = {
             'name': msg.get('subject') or _("No Subject"),
-            'description': desc,
+#            'description': desc,
             'email_from': msg.get('from'),
             'email_cc': msg.get('cc'),
             'user_id': False,
             'partner_id': partner,
+#            'email_sent_from' : fetchmail_obj.email_sent_from,
+#            'email_reply_to' : fetchmail_obj.email_reply_to,
         }
         defaults.update(custom_values)
-        return super(crm_helpdesk, self).message_new(cr, uid, msg, custom_values=defaults, context=context)
+        return super(osv.Model, self).message_new(cr, uid, msg, custom_values=defaults, context=context)
+
 
 #######################################################################################################
 
 ############## TO ADD PARTNER AS FOLLOWER ###############
 
     def create(self, cr, uid, vals, context=None):
+        setting_obj = self.pool.get('crm.helpdesk.emails')
+        setting_id = setting_obj.search(cr, uid, [])
         mail_followers_obj = self.pool.get('mail.followers')
         subtype_obj = self.pool.get('mail.message.subtype')
         context = dict(context or {})
         partner = vals.get('partner_id')
         new = set([partner])
+        if setting_id:
+            setting_id = setting_id[0]
+            vals.update({'setting_id': setting_id})
         cre_id = super(crm_helpdesk, self).create(cr, uid, vals, context=context)
-        subtype_ids = subtype_obj.search(
-            cr, uid, [
+        subtype_ids = subtype_obj.search(cr, uid, [
                 ('default', '=', True), '|', ('res_model', '=', self._name), ('res_model', '=', False)], context=context)
         mail_followers_obj.create(
             cr, SUPERUSER_ID, {
@@ -89,24 +99,26 @@ class crm_helpdesk(osv.osv):
             old = set([old_partner_id])
             Helpdesk_obj.message_unsubscribe(cr, uid, ids, list(old), context=context)
             Helpdesk_obj.message_subscribe(cr, uid, ids, list(new), context=context)
-        team_obj = self.pool.get('crm.case.section')
-        team1_id = team_obj.search(cr, uid, [('name', 'in', ['Tier 1'])])
-        team_ids = team_obj.search(cr, uid, [('name', 'in', ['Tier 2', 'Tier 3'])])
-        if team1_id:team1_id=team1_id[0]
-        users = [x.id for x in team_obj.browse(cr, uid, team1_id).member_ids]
-        if uid in users:
-            if self.browse(cr, uid, ids[0]).section_id and self.browse(cr, uid, ids[0]).section_id.id in team_ids:
-                raise osv.except_osv(_('Error!'), _('You can not edit this case.'))
+        if uid != SUPERUSER_ID:
+            team_obj = self.pool.get('crm.case.section')
+            team1_id = team_obj.search(cr, uid, [('name', 'in', ['Tier 1'])])
+            team_ids = team_obj.search(cr, uid, [('name', 'in', ['Tier 2', 'Tier 3'])])
+            if team1_id:team1_id=team1_id[0]
+            users = [x.id for x in team_obj.browse(cr, uid, team1_id).member_ids]
+            if uid in users:
+                if self.browse(cr, uid, ids[0]).section_id and self.browse(cr, uid, ids[0]).section_id.id in team_ids:
+                    raise osv.except_osv(_('Error!'), _('You can not edit this case.'))
         return super(crm_helpdesk, self).write(cr, uid, ids, values, context=context)
 
     def search(self, cr, uid, args, offset=0, limit=None, order=None, context=None, count=False):
-        team_obj = self.pool.get('crm.case.section')
-        team1_id = team_obj.search(cr, uid, [('name', 'in', ['Tier 1'])])
-        team_ids = team_obj.search(cr, uid, [('name', 'in', ['Tier 1', 'Tier 2', 'Tier 3'])])
-        if team1_id:team1_id=team1_id[0]
-        users = [x.id for x in team_obj.browse(cr, uid, team1_id).member_ids]
-        if uid in users:
-            args.append(('section_id', 'in', team_ids))
+        if uid != SUPERUSER_ID:
+            team_obj = self.pool.get('crm.case.section')
+            team1_id = team_obj.search(cr, uid, [('name', 'in', ['Tier 1'])])
+            team_ids = team_obj.search(cr, uid, [('name', 'in', ['Tier 1', 'Tier 2', 'Tier 3'])])
+            if team1_id:team1_id=team1_id[0]
+            users = [x.id for x in team_obj.browse(cr, uid, team1_id).member_ids]
+            if uid in users:
+                args.append(('section_id', 'in', team_ids))
         return super(crm_helpdesk, self).search(cr, uid, args, offset=offset, limit=limit, order=order,
             context=context, count=count)
 
@@ -251,6 +263,9 @@ class crm_helpdesk(osv.osv):
         'task_count': fields.function(_task_count, string='# Tasks', type='integer'),
         'section_id': fields.many2one('crm.case.section', 'Sales Team', \
                             select=True, help='Responsible sales team. Define Responsible user and Email account for mail gateway.'),
+        'setting_id': fields.many2one('crm.helpdesk.emails', 'Helpdesk Settings'),
+#        'email_reply_to' : fields.char('Email Replyto', size=128),
+#        'email_sent_from' : fields.char('Email Sent From', size=128),
 
     }
 
@@ -367,6 +382,7 @@ class mail_mail(osv.Model):
             return None
 
     def send(self, cr, uid, ids, auto_commit=False, raise_exception=False, context=None):
+
         """ Sends the selected emails immediately, ignoring their current
             state (mails that have already been sent should not be passed
             unless they should actually be re-sent).
@@ -382,152 +398,175 @@ class mail_mail(osv.Model):
             :return: True
         """
         context = dict(context or {})
-        ir_mail_server = self.pool.get('ir.mail_server')
-        ir_attachment = self.pool['ir.attachment']
-        for mail in self.browse(cr, SUPERUSER_ID, ids, context=context):
-            try:
-                # TDE note: remove me when model_id field is present on mail.message - done here to avoid doing it multiple times in the sub method
-                if mail.model:
-                    model_id = self.pool['ir.model'].search(cr, SUPERUSER_ID, [('model', '=', mail.model)], context=context)[0]
-                    model = self.pool['ir.model'].browse(cr, SUPERUSER_ID, model_id, context=context)
-                else:
-                    model = None
-                if model:
-                    context['model_name'] = model.name
-
-                # load attachment binary data with a separate read(), as prefetching all
-                # `datas` (binary field) could bloat the browse cache, triggerring
-                # soft/hard mem limits with temporary data.
-                attachment_ids = [a.id for a in mail.attachment_ids]
-                attachments = [(a['datas_fname'], base64.b64decode(a['datas']))
-                                 for a in ir_attachment.read(cr, SUPERUSER_ID, attachment_ids,
-                                                             ['datas_fname', 'datas'])]
-
-                # specific behavior to customize the send email for notified partners
-                email_list = []
-                if mail.email_to:
-                    email_list.append(self.send_get_email_dict(cr, uid, mail, context=context))
-                for partner in mail.recipient_ids:
-                    email_list.append(self.send_get_email_dict(cr, uid, mail, partner=partner, context=context))
-                # headers
-                headers = {}
-                bounce_alias = self.pool['ir.config_parameter'].get_param(cr, uid, "mail.bounce.alias", context=context)
-                catchall_domain = self.pool['ir.config_parameter'].get_param(cr, uid, "mail.catchall.domain", context=context)
-                if bounce_alias and catchall_domain:
-                    if mail.model and mail.res_id:
-                        headers['Return-Path'] = '%s-%d-%s-%d@%s' % (bounce_alias, mail.id, mail.model, mail.res_id, catchall_domain)
+        if context.get('default_model', False) == 'crm.helpdesk' and 'default_res_id' in context:
+            ir_mail_server = self.pool.get('ir.mail_server')
+            ir_attachment = self.pool['ir.attachment']
+            for mail in self.browse(cr, SUPERUSER_ID, ids, context=context):
+                try:
+                    # TDE note: remove me when model_id field is present on mail.message - done here to avoid doing it multiple times in the sub method
+                    if mail.model:
+                        model_id = self.pool['ir.model'].search(cr, SUPERUSER_ID, [('model', '=', mail.model)], context=context)[0]
+                        model = self.pool['ir.model'].browse(cr, SUPERUSER_ID, model_id, context=context)
                     else:
-                        headers['Return-Path'] = '%s-%d@%s' % (bounce_alias, mail.id, catchall_domain)
-                if mail.headers:
-                    try:
-                        headers.update(eval(mail.headers))
-                    except Exception:
-                        pass
+                        model = None
+                    if model:
+                        context['model_name'] = model.name
 
-                # Writing on the mail object may fail (e.g. lock on user) which
-                # would trigger a rollback *after* actually sending the email.
-                # To avoid sending twice the same email, provoke the failure earlier
-                mail.write({'state': 'exception'})
-                mail_sent = False
-                # build an RFC2822 email.message.Message object and send it without queuing
-                res = None
+                    # load attachment binary data with a separate read(), as prefetching all
+                    # `datas` (binary field) could bloat the browse cache, triggerring
+                    # soft/hard mem limits with temporary data.
+                    attachment_ids = [a.id for a in mail.attachment_ids]
+                    attachments = [(a['datas_fname'], base64.b64decode(a['datas']))
+                                     for a in ir_attachment.read(cr, SUPERUSER_ID, attachment_ids,
+                                                                 ['datas_fname', 'datas'])]
 
-                for email in email_list:
-                    email_sub = email.get('subject')
-                    if mail.mail_message_id.model == 'crm.helpdesk':
-                        # start custom code for send mail from 'Email Sent From' field
-                        helpdesk_obj = self.pool.get('crm.helpdesk').browse(cr, uid, context.get('default_res_id'), context=context)
-                        if context.get('default_res_id', False):
-                            email_sub = ('['+'Case'+ ' ' + str(context.get('default_res_id'))+']') + ' '+ (helpdesk_obj.name)
-                        email_from1 = ''
-                        reply_to1 = ''
-                        crm_helpdesk_mails = self.pool.get('crm.helpdesk.emails').search(cr, uid, [])
-                        if crm_helpdesk_mails:
-                            crm_helpdesk_browse = self.pool.get('crm.helpdesk.emails').browse(cr, uid, crm_helpdesk_mails[0])
-                            email_from1 = crm_helpdesk_browse.sent_from or ''
-                            if crm_helpdesk_browse.reply_to:
-                                reply_to1 = crm_helpdesk_browse.reply_to
+                    # specific behavior to customize the send email for notified partners
+                    email_list = []
+                    if mail.email_to:
+                        email_list.append(self.send_get_email_dict(cr, uid, mail, context=context))
+                    for partner in mail.recipient_ids:
+                        email_list.append(self.send_get_email_dict(cr, uid, mail, partner=partner, context=context))
+                    # headers
+                    headers = {}
+                    bounce_alias = self.pool['ir.config_parameter'].get_param(cr, uid, "mail.bounce.alias", context=context)
+                    catchall_domain = self.pool['ir.config_parameter'].get_param(cr, uid, "mail.catchall.domain", context=context)
+                    if bounce_alias and catchall_domain:
+                        if mail.model and mail.res_id:
+                            headers['Return-Path'] = '%s-%d-%s-%d@%s' % (bounce_alias, mail.id, mail.model, mail.res_id, catchall_domain)
+                        else:
+                            headers['Return-Path'] = '%s-%d@%s' % (bounce_alias, mail.id, catchall_domain)
+                    if mail.headers:
+                        try:
+                            headers.update(eval(mail.headers))
+                        except Exception:
+                            pass
+
+                    # Writing on the mail object may fail (e.g. lock on user) which
+                    # would trigger a rollback *after* actually sending the email.
+                    # To avoid sending twice the same email, provoke the failure earlier
+                    mail.write({'state': 'exception'})
+                    mail_sent = False
+                    # build an RFC2822 email.message.Message object and send it without queuing
+                    res = None
+
+                    for email in email_list:
+                        if mail.mail_message_id.model == 'crm.helpdesk':
+                            body = ''
+                            if mail.mail_message_id.model == 'crm.helpdesk':
+                                message_pool = self.pool.get('mail.message')
+
+                                message_ids = message_pool.search(cr, SUPERUSER_ID, [
+                                    ('model', '=', mail.mail_message_id.model),
+                                    ('res_id', '=', context.get('default_res_id')),
+                                ], context=context)
+
+                                for message_id in message_pool.browse(cr, uid, message_ids[1:], context=context):
+
+                                    body += "<div style='margin:0 0 0 .8ex;border-left:1px #ccc solid;padding-left:1ex'><br><br>On %s " % message_id.date
+                                    body += message_id.body + "</div>"
+
+                            email.update({'body' : email.get('body') + ustr(body)})
+                            # start custom code for send mail from 'Email Sent From' field
+                            helpdesk_obj = self.pool.get('crm.helpdesk').browse(cr, uid, context.get('default_res_id'), context=context)
+#    ########################################################
+#                            if context.get('default_res_id', False):
+#                                email_sub = ('['+'Case'+ ' ' + str(context.get('default_res_id'))+']') + ' '+ (helpdesk_obj.name)
+                            crm_helpdesk_mails = self.pool.get('crm.helpdesk.emails').search(cr, uid, [])
+                            if crm_helpdesk_mails:
+                                crm_helpdesk_browse = self.pool.get('crm.helpdesk.emails').browse(cr, uid, crm_helpdesk_mails[0])
+                                email_from1 = crm_helpdesk_browse.sent_from or ''
+                                if crm_helpdesk_browse.reply_to:
+                                    reply_to1 = crm_helpdesk_browse.reply_to
+                                else:
+                                    reply_to1 = crm_helpdesk_browse.sent_from
+    #########################################################
+#                            email_from1 = ''
+#                            reply_to1 = ''
+#                            email_from1 = helpdesk_obj.email_sent_from
+#                            if helpdesk_obj.email_reply_to:
+#                                reply_to1 = helpdesk_obj.email_reply_to
+#                            else:
+#                                reply_to1 = helpdesk_obj.email_sent_from
+                        else:
+                            email_from1 = mail.email_from
+                            reply_to1 = mail.reply_to
+
+    #################TO CHANGE SUBJECT FOR HELPDESK ################
+
+                        msg = ir_mail_server.build_email(
+                            email_from=email_from1,
+                            email_to=email.get('email_to'),
+                            subject= email.get('subject'),
+                            body= email.get('body'),
+                            body_alternative=email.get('body_alternative'),
+                            email_cc=tools.email_split(mail.email_cc),
+                            reply_to=reply_to1,
+                            attachments=attachments,
+                            message_id=mail.message_id,
+                            references=mail.references,
+                            object_id=mail.res_id and ('%s-%s' % (mail.res_id, mail.model)),
+                            subtype='html',
+                            subtype_alternative='plain',
+                            headers=headers)
+                        try:
+                            #check for ir mail server if is it configure or not if not then take default
+    ################### ADDED TO SPLIT MAIL ID FROM THE STRING #############################
+                            if email_from1.partition('<')[2].partition('>')[0].strip():
+                                mail_frm = email_from1.partition('<')[2].partition('>')[0].strip()
                             else:
-                                reply_to1 = crm_helpdesk_browse.sent_from
-
-                    else:
-                        email_from1 = mail.email_from
-                        reply_to1 = mail.reply_to
-
-#################TO CHANGE SUBJECT FOR HELPDESK ################
-                    msg = ir_mail_server.build_email(
-                        email_from=email_from1,
-                        email_to=email.get('email_to'),
-                        subject= email_sub, #email.get('subject'),
-                        body= email.get('body'),
-                        body_alternative=email.get('body_alternative'),
-                        email_cc=tools.email_split(mail.email_cc),
-                        reply_to=reply_to1,
-                        attachments=attachments,
-                        message_id=mail.message_id,
-                        references=mail.references,
-                        object_id=mail.res_id and ('%s-%s' % (mail.res_id, mail.model)),
-                        subtype='html',
-                        subtype_alternative='plain',
-                        headers=headers)
-                    try:
-                        #check for ir mail server if is it configure or not if not then take default
-################### ADDED TO SPLIT MAIL ID FROM THE STRING #############################
-                        if email_from1.partition('<')[2].partition('>')[0].strip():
-                            mail_frm = email_from1.partition('<')[2].partition('>')[0].strip()
-                        else:
-                            mail_frm = email_from1
-##################################################################
-                        server_id = ir_mail_server.search(cr, uid, [('smtp_user', '=', mail_frm)])
-                        if server_id:
-                            res = ir_mail_server.send_email(cr, uid, msg,
-                                                        mail_server_id=server_id,
+                                mail_frm = email_from1
+    ##################################################################
+                            server_id = ir_mail_server.search(cr, uid, [('smtp_user', '=', mail_frm)])
+                            if server_id:
+                                res = ir_mail_server.send_email(cr, uid, msg,
+                                                            mail_server_id=server_id,
+                                                            context=context)
+                            else:
+                                res = ir_mail_server.send_email(cr, uid, msg,
+                                                        mail_server_id=mail.mail_server_id.id,
                                                         context=context)
-                        else:
-                            res = ir_mail_server.send_email(cr, uid, msg,
-                                                    mail_server_id=mail.mail_server_id.id,
-                                                    context=context)
-                    except AssertionError as error:
-                        if error.message == ir_mail_server.NO_VALID_RECIPIENT:
-                            # No valid recipient found for this particular
-                            # mail item -> ignore error to avoid blocking
-                            # delivery to next recipients, if any. If this is
-                            # the only recipient, the mail will show as failed.
-                            _logger.warning("Ignoring invalid recipients for mail.mail %s: %s",
-                                            mail.message_id, email.get('email_to'))
-                        else:
-                            raise
-                if res:
-                    mail.write({'state': 'sent', 'message_id': res})
-                    mail_sent = True
+                        except AssertionError as error:
+                            if error.message == ir_mail_server.NO_VALID_RECIPIENT:
+                                # No valid recipient found for this particular
+                                # mail item -> ignore error to avoid blocking
+                                # delivery to next recipients, if any. If this is
+                                # the only recipient, the mail will show as failed.
+                                _logger.warning("Ignoring invalid recipients for mail.mail %s: %s",
+                                                mail.message_id, email.get('email_to'))
+                            else:
+                                raise
+                    if res:
+                        mail.write({'state': 'sent', 'message_id': res})
+                        mail_sent = True
 
-                # /!\ can't use mail.state here, as mail.refresh() will cause an error
-                # see revid:odo@openerp.com-20120622152536-42b2s28lvdv3odyr in 6.1
-                if mail_sent:
-                    _logger.info('Mail with ID %r and Message-Id %r successfully sent', mail.id, mail.message_id)
-                self._postprocess_sent_message(cr, uid, mail, context=context, mail_sent=mail_sent)
-            except MemoryError:
-                # prevent catching transient MemoryErrors, bubble up to notify user or abort cron job
-                # instead of marking the mail as failed
-                _logger.exception('MemoryError while processing mail with ID %r and Msg-Id %r. '\
-                                      'Consider raising the --limit-memory-hard startup option',
-                                  mail.id, mail.message_id)
-                raise
-            except Exception as e:
-                _logger.exception('failed sending mail.mail %s', mail.id)
-                mail.write({'state': 'exception'})
-                self._postprocess_sent_message(cr, uid, mail, context=context, mail_sent=False)
-                if raise_exception:
-                    if isinstance(e, AssertionError):
-                        # get the args of the original error, wrap into a value and throw a MailDeliveryException
-                        # that is an except_orm, with name and value as arguments
-                        value = '. '.join(e.args)
-                        raise MailDeliveryException(_("Mail Delivery Failed"), value)
+                    # /!\ can't use mail.state here, as mail.refresh() will cause an error
+                    # see revid:odo@openerp.com-20120622152536-42b2s28lvdv3odyr in 6.1
+                    if mail_sent:
+                        _logger.info('Mail with ID %r and Message-Id %r successfully sent', mail.id, mail.message_id)
+                    self._postprocess_sent_message(cr, uid, mail, context=context, mail_sent=mail_sent)
+                except MemoryError:
+                    # prevent catching transient MemoryErrors, bubble up to notify user or abort cron job
+                    # instead of marking the mail as failed
+                    _logger.exception('MemoryError while processing mail with ID %r and Msg-Id %r. '\
+                                          'Consider raising the --limit-memory-hard startup option',
+                                      mail.id, mail.message_id)
                     raise
+                except Exception as e:
+                    _logger.exception('failed sending mail.mail %s', mail.id)
+                    mail.write({'state': 'exception'})
+                    self._postprocess_sent_message(cr, uid, mail, context=context, mail_sent=False)
+                    if raise_exception:
+                        if isinstance(e, AssertionError):
+                            # get the args of the original error, wrap into a value and throw a MailDeliveryException
+                            # that is an except_orm, with name and value as arguments
+                            value = '. '.join(e.args)
+                            raise MailDeliveryException(_("Mail Delivery Failed"), value)
+                        raise
 
-            if auto_commit is True:
-                cr.commit()
-        return True
+                if auto_commit is True:
+                    cr.commit()
+            return True
+        return super(mail_mail, self).send(cr, uid, ids, auto_commit, raise_exception, context=context)
 
 
 class crm_helpdesk_emails(osv.osv):
@@ -552,24 +591,26 @@ class res_partner(osv.osv):
     def write(self, cr, uid, ids, vals, context=None, check=True, update_check=True):
         if context is None:
             context={}
-        team_obj = self.pool.get('crm.case.section')
-        team_id = team_obj.search(cr, uid, [('name', 'ilike', 'Tier 1')])
-        if team_id:team_id=team_id[0]
-        users = [x.id for x in team_obj.browse(cr, uid, team_id).member_ids]
-        if uid in users:
-            raise osv.except_osv(_('Error!'), _('You can not edit this customer.'))
+        if uid != SUPERUSER_ID:
+            team_obj = self.pool.get('crm.case.section')
+            team_id = team_obj.search(cr, uid, [('name', 'ilike', 'Tier 1')])
+            if team_id:team_id=team_id[0]
+            users = [x.id for x in team_obj.browse(cr, uid, team_id).member_ids]
+            if uid in users:
+                raise osv.except_osv(_('Error!'), _('You can not edit this customer.'))
         return super(res_partner, self).write(cr, uid, ids, vals, context)
 
     def unlink(self, cr, uid, ids, context=None, check=True):
         if context is None:
             context = {}
-        team_obj = self.pool.get('crm.case.section')
-        team_id = team_obj.search(cr, uid, [('name', 'ilike', 'Tier 1')])
-        if team_id:team_id=team_id[0]
-        users = [x.id for x in team_obj.browse(cr, uid, team_id).member_ids]
-        if uid in users:
-            raise osv.except_osv(_('Error!'), _('You can not delete this customer.'))
-        return super(account_move_line, self).unlink(cr, uid, [line.id], context=context)
+        if uid != SUPERUSER_ID:
+            team_obj = self.pool.get('crm.case.section')
+            team_id = team_obj.search(cr, uid, [('name', 'ilike', 'Tier 1')])
+            if team_id:team_id=team_id[0]
+            users = [x.id for x in team_obj.browse(cr, uid, team_id).member_ids]
+            if uid in users:
+                raise osv.except_osv(_('Error!'), _('You can not delete this customer.'))
+        return super(res_partner, self).unlink(cr, uid, ids, context=context)
 
     _columns = {
         'helpdesk_count': fields.function(_Helpdesk_count, string='# Helpdesks', type='integer'),
@@ -583,57 +624,16 @@ class mail_thread(osv.AbstractModel):
     def message_process(self, cr, uid, model, message, custom_values=None,
                         save_original=False, strip_attachments=False,
                         thread_id=None, context=None):
-        """ Process an incoming RFC2822 email message, relying on
-            ``mail.message.parse()`` for the parsing operation,
-            and ``message_route()`` to figure out the target model.
-
-            Once the target model is known, its ``message_new`` method
-            is called with the new message (if the thread record did not exist)
-            or its ``message_update`` method (if it did).
-
-            There is a special case where the target model is False: a reply
-            to a private message. In this case, we skip the message_new /
-            message_update step, to just post a new message using mail_thread
-            message_post.
-
-           :param string model: the fallback model to use if the message
-               does not match any of the currently configured mail aliases
-               (may be None if a matching alias is supposed to be present)
-           :param message: source of the RFC2822 message
-           :type message: string or xmlrpclib.Binary
-           :type dict custom_values: optional dictionary of field values
-                to pass to ``message_new`` if a new record needs to be created.
-                Ignored if the thread record already exists, and also if a
-                matching mail.alias was found (aliases define their own defaults)
-           :param bool save_original: whether to keep a copy of the original
-                email source attached to the message after it is imported.
-           :param bool strip_attachments: whether to strip all attachments
-                before processing the message, in order to save some space.
-           :param int thread_id: optional ID of the record/thread from ``model``
-               to which this mail should be attached. When provided, this
-               overrides the automatic detection based on the message
-               headers.
-        """
         if context is None:
             context = {}
-
-        # extract message bytes - we are forced to pass the message as binary because
-        # we don't know its encoding until we parse its headers and hence can't
-        # convert it to utf-8 for transport between the mailgate script and here.
         if isinstance(message, xmlrpclib.Binary):
             message = str(message.data)
-        # Warning: message_from_string doesn't always work correctly on unicode,
-        # we must use utf-8 strings here :-(
         if isinstance(message, unicode):
             message = message.encode('utf-8')
         msg_txt = email.message_from_string(message)
-
-        # parse the message, verify we are not in a loop by checking message_id is not duplicated
         msg = self.message_parse(cr, uid, msg_txt, save_original=save_original, context=context)
-
         if strip_attachments:
             msg.pop('attachments', None)
-
         if msg.get('message_id'):   # should always be True as message_parse generate one if missing
             existing_msg_ids = self.pool.get('mail.message').search(cr, SUPERUSER_ID, [
                                                                 ('message_id', '=', msg.get('message_id')),
@@ -642,8 +642,6 @@ class mail_thread(osv.AbstractModel):
                 _logger.info('Ignored mail from %s to %s with Message-Id %s: found duplicated Message-Id during processing',
                                 msg.get('from'), msg.get('to'), msg.get('message_id'))
                 return False
-
-        # find possible routes for the message
         routes = self.message_route(cr, uid, msg_txt, msg, model, thread_id, custom_values, context=context)
         thread_id = self.message_route_process(cr, uid, msg_txt, msg, routes, context=context)
         if routes[0][0] == 'crm.helpdesk' and msg.get('parent_id'):
@@ -655,7 +653,6 @@ class mail_thread(osv.AbstractModel):
 
 
     def message_route_process(self, cr, uid, message, message_dict, routes, context=None):
-        # postpone setting message_dict.partner_ids after message_post, to avoid double notifications
         context = dict(context or {})
         partner_ids = message_dict.pop('partner_ids', [])
         thread_id = False
@@ -669,9 +666,6 @@ class mail_thread(osv.AbstractModel):
                         "Undeliverable mail with Message-Id %s, model %s does not accept incoming emails" %
                         (message_dict['message_id'], model)
                     )
-
-                # disabled subscriptions during message_new/update to avoid having the system user running the
-                # email gateway become a follower of all inbound messages
                 nosub_ctx = dict(context, mail_create_nosubscribe=True, mail_create_nolog=True)
                 if thread_id and hasattr(model_pool, 'message_update'):
                     model_pool.message_update(cr, user_id, [thread_id], message_dict, context=nosub_ctx)
@@ -686,10 +680,7 @@ class mail_thread(osv.AbstractModel):
                 context['thread_model'] = model
                 model_pool = self.pool['mail.thread']
             new_msg_id = model_pool.message_post(cr, uid, [thread_id], context=context, subtype='mail.mt_comment', **message_dict)
-
             if partner_ids:
-                # postponed after message_post, because this is an external message and we don't want to create
-                # duplicate emails due to notifications
                 self.pool.get('mail.message').write(cr, uid, [new_msg_id], {'partner_ids': partner_ids}, context=context)
         return thread_id
 
@@ -717,13 +708,6 @@ class mail_message(osv.Model):
             self._notify(cr, uid, newid, context=context,
                          force_send=context.get('mail_notify_force_send', True),
                          user_signature=context.get('mail_notify_user_signature', True))
-#################################################################################################
-        # TDE FIXME: handle default_starred. Why not setting an inv on starred ?
-        # Because starred will call set_message_starred, that looks for notifications.
-        # When creating a new mail_message, it will create a notification to a message
-        # that does not exist, leading to an error (key not existing). Also this
-        # this means unread notifications will be created, yet we can not assure
-        # this is what we want.
         if default_starred:
             self.set_message_starred(cr, uid, [newid], True, context=context)
         return newid
@@ -747,16 +731,11 @@ class project(osv.osv):
         return res
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+#class fetchmail_server(osv.osv):
+#    """Incoming POP/IMAP mail server account"""
+#    _inherit = 'fetchmail.server'
+#
+#    _columns = {
+#            'email_sent_from' : fields.char('Email Sent From', size=128),
+#            'email_reply_to' : fields.char('Email Replyto', size=128),
+#    }
