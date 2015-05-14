@@ -721,15 +721,3 @@ class task(osv.osv):
             args += ['|',['user_id','=',user],['user_id','=',False]]
         return super(task, self).search(cr, user, args, offset=offset, limit=limit, order=order,
             context=context, count=count)
-
-
-
-
-
-
-
-
-
-
-
-
