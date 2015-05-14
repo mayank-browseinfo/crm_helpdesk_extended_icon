@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 <openerp>
-    <data noupdate="1">
+    <data noupdate="0">
         <!--Email template -->
         <record id="email_template_crm_helpdesk" model="email.template">
             <field name="name">CRM HELPDESK - Send by Email</field>

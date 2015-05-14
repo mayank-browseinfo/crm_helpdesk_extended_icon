@@ -25,6 +25,7 @@
     "description": """
         This module is used to add short links with different options in crm helpdesk.
     """,
+    "author": 'Browseinfo',
     "website" : "www.browseinfo.in",
     "data" :[
     		'security/helpdesk_security.xml',
